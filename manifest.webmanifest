@@ -1,0 +1,16 @@
+{
+  "name": "现金安全助手",
+  "short_name": "现金助手",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#020715",
+  "theme_color": "#020715",
+  "icons": [
+    {
+      "src": "./logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

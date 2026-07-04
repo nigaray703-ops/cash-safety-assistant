@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#020715" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="现金安全助手" />
+    <title>现金安全助手</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./logo.png" />
+    <link rel="apple-touch-icon" href="./logo.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="screen active" id="home-screen" aria-labelledby="home-title">
+        <header class="screen-header brand-header">
+          <img class="app-logo" src="./logo.png" alt="现金安全助手 logo" />
+          <div>
+            <h1 id="home-title">现金安全助手</h1>
+            <p class="screen-subtitle">我的现金状态</p>
+          </div>
+        </header>
+
+        <div class="stack" id="homeCards"></div>
+      </section>
+
+      <section class="screen" id="records-screen" aria-labelledby="records-title">
+        <header class="screen-header">
+          <h1 id="records-title">记录</h1>
+        </header>
+
+        <div class="stack">
+          <form class="glass-card record-form" id="recordForm">
+            <h2>快速记录</h2>
+            <div class="form-row">
+              <span class="field-label">类型</span>
+              <div class="segment-control" role="group" aria-label="记录类型">
+                <button class="segment active" id="expenseTypeButton" data-record-type="expense" type="button">支出</button>
+                <button class="segment" id="incomeTypeButton" data-record-type="income" type="button">收入</button>
+              </div>
+            </div>
+            <label class="form-field" for="recordAmount">
+              <span>金额</span>
+              <span class="money-input">
+                <span>NZ$</span>
+                <input class="amount-input" id="recordAmount" inputmode="decimal" placeholder="0.00" />
+              </span>
+            </label>
+            <label class="form-field" for="recordName">
+              <span>名称</span>
+              <input class="text-input wide" id="recordName" placeholder="例如：房租 / 工资 / 机票" />
+            </label>
+            <button class="primary-button" id="recordSubmit" type="submit">保存支出</button>
+            <p class="save-toast" id="saveToast" role="status" aria-live="polite"></p>
+          </form>
+
+          <article class="glass-card">
+            <h2>最近 10 条记录</h2>
+            <div class="record-list" id="recordList"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="screen" id="settings-screen" aria-labelledby="settings-title">
+        <header class="screen-header">
+          <h1 id="settings-title">设置</h1>
+        </header>
+
+        <div class="stack settings-stack">
+          <article class="glass-card">
+            <h2>当前现金</h2>
+            <label class="settings-row" for="settingsCurrentSavings"><span>当前存款</span><input class="amount-input" id="settingsCurrentSavings" inputmode="decimal" /></label>
+          </article>
+
+          <article class="glass-card">
+            <h2>收入</h2>
+            <label class="settings-row" for="settingsFamilySupport"><span>家庭支持</span><input class="amount-input" id="settingsFamilySupport" inputmode="decimal" /></label>
+            <label class="settings-row" for="settingsSalary"><span>工资</span><input class="amount-input" id="settingsSalary" inputmode="decimal" /></label>
+            <label class="settings-row" for="settingsExtraIncome"><span>额外收入</span><input class="amount-input" id="settingsExtraIncome" inputmode="decimal" /></label>
+          </article>
+
+          <article class="glass-card">
+            <h2>固定支出</h2>
+            <label class="settings-row" for="settingsRent"><span>房租</span><input class="amount-input" id="settingsRent" inputmode="decimal" /></label>
+            <label class="settings-row" for="settingsUtilities"><span>水电网预计</span><input class="amount-input" id="settingsUtilities" inputmode="decimal" /></label>
+          </article>
+
+          <article class="glass-card">
+            <h2>工作时间</h2>
+            <label class="settings-row" for="netHourlyWage"><span>税后时薪</span><input class="amount-input" id="netHourlyWage" inputmode="decimal" /></label>
+            <label class="settings-row" for="dailyWorkHours"><span>每天工作小时</span><input class="amount-input" id="dailyWorkHours" inputmode="decimal" /></label>
+            <label class="settings-row" for="weeklyWorkDays"><span>每周工作天数</span><input class="amount-input" id="weeklyWorkDays" inputmode="decimal" /></label>
+          </article>
+
+          <article class="glass-card">
+            <h2>界面</h2>
+            <label class="toggle-row"><span>显示钱换时间卡片</span><input type="checkbox" id="showTimeCard" /></label>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <nav class="tab-bar" aria-label="底部导航">
+      <button class="tab active" data-tab="home-screen" type="button">
+        <span class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+        </span>
+        首页
+      </button>
+      <button class="tab" data-tab="records-screen" type="button">
+        <span class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/><path d="M4 4h16v16H4z"/></svg>
+        </span>
+        记录
+      </button>
+      <button class="tab" data-tab="settings-screen" type="button">
+        <span class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 12h2"/><path d="M18 12h2"/><path d="m6.34 6.34 1.42 1.42"/><path d="m16.24 16.24 1.42 1.42"/><path d="m17.66 6.34-1.42 1.42"/><path d="m7.76 16.24-1.42 1.42"/></svg>
+        </span>
+        设置
+      </button>
+    </nav>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
