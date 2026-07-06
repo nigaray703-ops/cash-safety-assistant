@@ -1,12 +1,11 @@
-const CACHE_NAME = "cash-safety-web-v12";
+const CACHE_NAME = "cash-safety-web-v13";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
-  "./icon.svg",
-  "./logo.png"
+  "./icon.svg"
 ];
 
 self.addEventListener("install", (event) => {
