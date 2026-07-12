@@ -15,6 +15,23 @@
   </head>
   <body>
     <main class="app-shell">
+      <section class="screen active" id="auth-screen" aria-labelledby="auth-title">
+        <header class="screen-header brand-header">
+          <img class="app-logo" src="./logo.png" alt="现金安全助手 logo" />
+          <div>
+            <h1 id="auth-title">现金安全助手</h1>
+            <p class="screen-subtitle">登录后查看你的私人数据</p>
+          </div>
+        </header>
+
+        <form class="glass-card auth-card" id="authForm">
+          <h2>账号登录</h2>
+          <label class="form-field" for="authEmail"><span>邮箱</span><input class="text-input wide" id="authEmail" autocomplete="email" inputmode="email" placeholder="你的邮箱" /></label>
+          <label class="form-field" for="authPassword"><span>密码</span><input class="text-input wide" id="authPassword" autocomplete="current-password" type="password" placeholder="至少 6 位" /></label>
+          <div class="auth-actions"><button class="primary-button" id="signInButton" type="submit">登录</button><button class="secondary-button" id="signUpButton" type="button">注册</button></div>
+          <p class="save-toast auth-status" id="authStatus" role="status" aria-live="polite"></p>
+        </form>
+      </section>
       <section class="screen active" id="home-screen" aria-labelledby="home-title">
         <header class="screen-header brand-header">
           <img class="app-logo" src="./logo.png" alt="现金安全助手 logo" />
@@ -99,6 +116,12 @@
             <h2>界面</h2>
             <label class="toggle-row"><span>显示钱换时间卡片</span><input type="checkbox" id="showTimeCard" /></label>
           </article>
+
+          <article class="glass-card">
+            <h2>账号</h2>
+            <div class="money-line"><span>当前登录</span><strong id="accountEmail">未登录</strong></div>
+            <button class="secondary-button account-button" id="signOutButton" type="button">退出登录</button>
+          </article>
         </div>
       </section>
     </main>
@@ -124,6 +147,8 @@
       </button>
     </nav>
 
+    <script src="./supabase-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./app.js"></script>
   </body>
 </html>
