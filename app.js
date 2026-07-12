@@ -1,6 +1,11 @@
 const STORAGE_KEY = "cash-safety-web-v2";
 const LEGACY_STORAGE_KEY = "cash-safety-web-v1";
 const ACTIVE_TAB_KEY = "cash-safety-active-tab";
+const CLOUD_TABLE = "cash_safety_profiles";
+const supabaseSettings = window.CASH_SAFETY_SUPABASE || {};
+const hasSupabaseConfig = Boolean(supabaseSettings.url && supabaseSettings.anonKey && !String(supabaseSettings.url).includes("YOUR_") && !String(supabaseSettings.anonKey).includes("YOUR_"));
+let supabaseClient = null;
+let currentUser = null;
 
 const defaults = {
   currentSavings: 9000,
@@ -18,11 +23,11 @@ const defaults = {
   productPrice: 0
 };
 
-let state = loadState();
+let state = loadLocalState();
 let recordType = "expense";
 let toastTimer = null;
 
-function loadState() {
+function loadLocalState() {
   const saved = readStorage(STORAGE_KEY);
   if (saved) return normalizeState(saved);
 
@@ -99,8 +104,57 @@ function normalizeRecord(record) {
   };
 }
 
-function saveState() {
+async function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!supabaseClient || !currentUser) return;
+  await supabaseClient.from(CLOUD_TABLE).upsert({ user_id: currentUser.id, data: state, updated_at: new Date().toISOString() });
+}
+
+async function loadCloudState() {
+  if (!supabaseClient || !currentUser) return;
+  const { data, error } = await supabaseClient.from(CLOUD_TABLE).select("data").eq("user_id", currentUser.id).maybeSingle();
+  if (error) { setAuthStatus("云端数据读取失败，请检查 Supabase 表和权限。", true); return; }
+  if (data && data.data) state = normalizeState(data.data);
+  else await saveState();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function setLocked(locked) {
+  document.body.classList.toggle("locked", locked);
+  document.body.classList.toggle("authenticated", !locked);
+}
+
+function setAuthStatus(message, isError = false) {
+  const status = document.getElementById("authStatus");
+  if (!status) return;
+  status.textContent = message || "";
+  status.classList.toggle("amount-negative", Boolean(isError));
+}
+
+function updateAccountUi() {
+  const accountEmail = document.getElementById("accountEmail");
+  if (accountEmail) accountEmail.textContent = currentUser?.email || "未登录";
+}
+
+async function handleAuthChange(user) {
+  currentUser = user || null;
+  updateAccountUi();
+  if (!currentUser) { state = normalizeState(defaults); setLocked(true); render(); return; }
+  setAuthStatus("正在读取你的私人数据...");
+  await loadCloudState();
+  setLocked(false);
+  setAuthStatus("");
+  render();
+  activateTab(localStorage.getItem(ACTIVE_TAB_KEY) || "home-screen", { scroll: false });
+}
+
+async function setupAuth() {
+  setLocked(true);
+  if (!hasSupabaseConfig || !window.supabase) { setAuthStatus("登录功能已加入，但还需要配置 Supabase 地址和 anon key。", true); render(); return; }
+  supabaseClient = window.supabase.createClient(supabaseSettings.url, supabaseSettings.anonKey);
+  const { data } = await supabaseClient.auth.getSession();
+  await handleAuthChange(data.session?.user || null);
+  supabaseClient.auth.onAuthStateChange((_event, session) => handleAuthChange(session?.user || null));
 }
 
 function uid(prefix) {
@@ -402,6 +456,31 @@ function showSavedToast(message = "已保存。") {
 }
 
 function setup() {
+  const authForm = document.getElementById("authForm");
+  const signUpButton = document.getElementById("signUpButton");
+  const signOutButton = document.getElementById("signOutButton");
+  if (authForm) authForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!supabaseClient) return;
+    const email = document.getElementById("authEmail")?.value.trim();
+    const password = document.getElementById("authPassword")?.value;
+    if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
+    setAuthStatus("正在登录...");
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) setAuthStatus(error.message, true);
+  });
+  if (signUpButton) signUpButton.addEventListener("click", async () => {
+    if (!supabaseClient) return;
+    const email = document.getElementById("authEmail")?.value.trim();
+    const password = document.getElementById("authPassword")?.value;
+    if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
+    setAuthStatus("正在注册...");
+    const { error } = await supabaseClient.auth.signUp({ email, password });
+    if (error) setAuthStatus(error.message, true);
+    else setAuthStatus("注册成功。如果收到确认邮件，请先点邮件里的确认链接。");
+  });
+  if (signOutButton) signOutButton.addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
+
   bindAmount("settingsCurrentSavings", "currentSavings");
   bindAmount("settingsFamilySupport", "familySupport");
   bindAmount("settingsSalary", "salary");
@@ -483,7 +562,7 @@ function setup() {
 
   setRecordType("expense");
   render();
-  activateTab(localStorage.getItem(ACTIVE_TAB_KEY) || "home-screen", { scroll: false });
 }
 
 setup();
+setupAuth();
