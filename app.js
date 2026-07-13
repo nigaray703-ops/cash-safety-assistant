@@ -131,6 +131,21 @@ function setAuthStatus(message, isError = false) {
   status.classList.toggle("amount-negative", Boolean(isError));
 }
 
+function friendlyAuthError(message = "") {
+  const text = String(message).toLowerCase();
+  if (text.includes("invalid login credentials")) return "邮箱或密码不正确。";
+  if (text.includes("email address") && text.includes("invalid")) return "邮箱格式或邮箱域名无效，请用你真实常用的邮箱。";
+  if (text.includes("password") && (text.includes("6") || text.includes("short"))) return "密码至少需要 6 位。";
+  if (text.includes("already registered") || text.includes("already been registered")) return "这个邮箱已经注册过了，请直接登录。";
+  if (text.includes("signup") && text.includes("disabled")) return "当前 Supabase 项目没有开启邮箱注册。";
+  if (text.includes("rate limit")) return "尝试太频繁了，请稍等几分钟再试。";
+  return message || "操作失败，请稍后再试。";
+}
+
+function authRedirectUrl() {
+  return new URL("./", window.location.href).href;
+}
+
 function updateAccountUi() {
   const accountEmail = document.getElementById("accountEmail");
   if (accountEmail) accountEmail.textContent = currentUser?.email || "未登录";
@@ -465,19 +480,26 @@ function setup() {
     const email = document.getElementById("authEmail")?.value.trim();
     const password = document.getElementById("authPassword")?.value;
     if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
+    if (password.length < 6) return setAuthStatus("密码至少需要 6 位。", true);
     setAuthStatus("正在登录...");
     const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    if (error) setAuthStatus(error.message, true);
+    if (error) setAuthStatus(friendlyAuthError(error.message), true);
   });
   if (signUpButton) signUpButton.addEventListener("click", async () => {
     if (!supabaseClient) return;
     const email = document.getElementById("authEmail")?.value.trim();
     const password = document.getElementById("authPassword")?.value;
     if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
+    if (password.length < 6) return setAuthStatus("密码至少需要 6 位。", true);
     setAuthStatus("正在注册...");
-    const { error } = await supabaseClient.auth.signUp({ email, password });
-    if (error) setAuthStatus(error.message, true);
-    else setAuthStatus("注册成功。如果收到确认邮件，请先点邮件里的确认链接。");
+    const { data, error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: authRedirectUrl() }
+    });
+    if (error) setAuthStatus(friendlyAuthError(error.message), true);
+    else if (data?.session) setAuthStatus("注册成功，已经登录。");
+    else setAuthStatus("注册成功。请去邮箱点击确认链接，再回来登录。");
   });
   if (signOutButton) signOutButton.addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
 
