@@ -1,6 +1,6 @@
 # Cash Safety Assistant / 现金安全助手
 
-![Cash Safety Assistant Demo](./demo-preview.svg)
+![Cash Safety Assistant Demo](./demo-preview.png)
 
 一个手机优先的个人现金安全 Demo，用来快速查看现金缓冲、固定收支、最近记录，以及“钱换时间”的工作时长估算。
 
