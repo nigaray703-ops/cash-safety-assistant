@@ -1018,13 +1018,3 @@ input[type="checkbox"]:checked::after {
   width: 18px;
   height: 18px;
 }
-
-
-/* Private account mode - 2026-07-12 */
-body.locked .screen:not(#auth-screen),
-body.locked .tab-bar { display: none; }
-body:not(.locked) #auth-screen { display: none; }
-.auth-card { margin-top: 10px; }
-.auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.auth-status { color: var(--primary-light); }
-.account-button { width: 100%; margin-top: 14px; min-height: 42px; }
