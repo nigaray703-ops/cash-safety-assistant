@@ -15,30 +15,32 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="screen active" id="auth-screen" aria-labelledby="auth-title">
-        <header class="screen-header brand-header">
+      <header class="app-topbar">
+        <div class="brand-header">
           <img class="app-logo" src="./logo.png" alt="现金安全助手 logo" />
           <div>
-            <h1 id="auth-title">现金安全助手</h1>
-            <p class="screen-subtitle">登录后查看你的私人数据</p>
+            <h1>现金安全助手</h1>
+            <p class="screen-subtitle">个人现金缓冲 · 固定收支 · 钱换时间</p>
           </div>
-        </header>
-
-        <form class="glass-card auth-card" id="authForm">
-          <h2>账号登录</h2>
-          <label class="form-field" for="authEmail"><span>邮箱</span><input class="text-input wide" id="authEmail" autocomplete="email" inputmode="email" placeholder="你的邮箱" /></label>
-          <label class="form-field" for="authPassword"><span>密码</span><input class="text-input wide" id="authPassword" autocomplete="current-password" type="password" placeholder="至少 6 位" /></label>
-          <div class="auth-actions"><button class="primary-button" id="signInButton" type="submit">登录</button><button class="secondary-button" id="signUpButton" type="button">注册</button></div>
+        </div>
+        <div class="auth-panel">
+          <p class="demo-notice" id="modeNotice">当前为 Demo 模式。数据只保存在本机浏览器，登录后可同步保存你的私人数据。</p>
+          <div class="auth-actions" id="signedOutActions">
+            <button class="secondary-button" id="openSignInButton" type="button">登录</button>
+            <button class="primary-button compact-button" id="openSignUpButton" type="button">注册</button>
+          </div>
+          <div class="signed-in-row" id="signedInPanel" hidden>
+            <span>当前登录</span>
+            <strong id="currentUserEmail">未登录</strong>
+            <button class="secondary-button" id="signOutButton" type="button">退出登录</button>
+          </div>
           <p class="save-toast auth-status" id="authStatus" role="status" aria-live="polite"></p>
-        </form>
-      </section>
+        </div>
+      </header>
+
       <section class="screen active" id="home-screen" aria-labelledby="home-title">
-        <header class="screen-header brand-header">
-          <img class="app-logo" src="./logo.png" alt="现金安全助手 logo" />
-          <div>
-            <h1 id="home-title">现金安全助手</h1>
-            <p class="screen-subtitle">我的现金状态</p>
-          </div>
+        <header class="screen-header">
+          <h1 id="home-title">首页</h1>
         </header>
 
         <div class="stack" id="homeCards"></div>
@@ -90,6 +92,7 @@
           <article class="glass-card">
             <h2>当前现金</h2>
             <label class="settings-row" for="settingsCurrentSavings"><span>当前存款</span><input class="amount-input" id="settingsCurrentSavings" inputmode="decimal" /></label>
+            <label class="settings-row" for="settingsSafetyLine"><span>安全线</span><input class="amount-input" id="settingsSafetyLine" inputmode="decimal" /></label>
           </article>
 
           <article class="glass-card">
@@ -116,12 +119,6 @@
             <h2>界面</h2>
             <label class="toggle-row"><span>显示钱换时间卡片</span><input type="checkbox" id="showTimeCard" /></label>
           </article>
-
-          <article class="glass-card">
-            <h2>账号</h2>
-            <div class="money-line"><span>当前登录</span><strong id="accountEmail">未登录</strong></div>
-            <button class="secondary-button account-button" id="signOutButton" type="button">退出登录</button>
-          </article>
         </div>
       </section>
     </main>
@@ -147,8 +144,28 @@
       </button>
     </nav>
 
-    <script src="./supabase-config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js"></script>
+    <div class="modal-backdrop" id="signInModal" hidden>
+      <form class="glass-card auth-modal" id="signInForm">
+        <h2>登录</h2>
+        <label class="form-field" for="signInEmail"><span>邮箱</span><input class="text-input wide" id="signInEmail" autocomplete="email" inputmode="email" /></label>
+        <label class="form-field" for="signInPassword"><span>密码</span><input class="text-input wide" id="signInPassword" autocomplete="current-password" type="password" /></label>
+        <button class="primary-button" type="submit">登录</button>
+        <button class="secondary-button modal-cancel" data-close-modal type="button">取消</button>
+      </form>
+    </div>
+
+    <div class="modal-backdrop" id="signUpModal" hidden>
+      <form class="glass-card auth-modal" id="signUpForm">
+        <h2>注册</h2>
+        <label class="form-field" for="signUpEmail"><span>邮箱</span><input class="text-input wide" id="signUpEmail" autocomplete="email" inputmode="email" /></label>
+        <label class="form-field" for="signUpPassword"><span>密码</span><input class="text-input wide" id="signUpPassword" autocomplete="new-password" type="password" /></label>
+        <label class="form-field" for="signUpPasswordConfirm"><span>确认密码</span><input class="text-input wide" id="signUpPasswordConfirm" autocomplete="new-password" type="password" /></label>
+        <button class="primary-button" type="submit">注册</button>
+        <button class="secondary-button modal-cancel" data-close-modal type="button">取消</button>
+      </form>
+    </div>
+
+    <script src="./firebase-config.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>

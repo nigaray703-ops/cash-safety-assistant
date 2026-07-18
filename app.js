@@ -1,13 +1,30 @@
-const STORAGE_KEY = "cash-safety-web-v2";
-const LEGACY_STORAGE_KEY = "cash-safety-web-v1";
-const ACTIVE_TAB_KEY = "cash-safety-active-tab";
-const CLOUD_TABLE = "cash_safety_profiles";
-const supabaseSettings = window.CASH_SAFETY_SUPABASE || {};
-const hasSupabaseConfig = Boolean(supabaseSettings.url && supabaseSettings.anonKey && !String(supabaseSettings.url).includes("YOUR_") && !String(supabaseSettings.anonKey).includes("YOUR_"));
-let supabaseClient = null;
-let currentUser = null;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-const defaults = {
+const DEMO_STORAGE_KEY = "cash-safety-demo-v1";
+const LEGACY_STORAGE_KEY = "cash-safety-web-v2";
+const ACTIVE_TAB_KEY = "cash-safety-active-tab";
+
+const demoData = {
   currentSavings: 9000,
   safetyLine: 3000,
   familySupport: 0,
@@ -19,48 +36,37 @@ const defaults = {
   dailyWorkHours: 8,
   weeklyWorkDays: 5,
   showTimeCard: true,
-  records: [],
-  productPrice: 0
+  productPrice: 0,
+  records: []
 };
 
-let state = loadLocalState();
+let state = loadDemoState();
 let recordType = "expense";
 let toastTimer = null;
+let auth = null;
+let db = null;
+let currentUser = null;
+let authReady = false;
+let cloudReady = false;
 
-function loadLocalState() {
-  const saved = readStorage(STORAGE_KEY);
-  if (saved) return normalizeState(saved);
+function firebaseConfig() {
+  return window.CASH_SAFETY_FIREBASE_CONFIG || {};
+}
 
-  const legacy = readStorage(LEGACY_STORAGE_KEY);
-  if (legacy) {
-    return normalizeState({
-      ...defaults,
-      currentSavings: legacy.currentSavings,
-      safetyLine: legacy.safetyLine,
-      familySupport: legacy.familySupport,
-      salary: legacy.salary,
-      extraIncome: legacy.extraIncome,
-      rent: legacy.rent,
-      utilitiesInternet: legacy.utilities,
-      netHourlyWage: legacy.manualNetHourlyRate || (legacy.grossHourlyRate ? legacy.grossHourlyRate * 0.82 : defaults.netHourlyWage),
-      dailyWorkHours: legacy.dailyWorkHours,
-      weeklyWorkDays: legacy.weeklyWorkDays,
-      showTimeCard: legacy.showsTimeValueCard !== false,
-      productPrice: legacy.productPrice,
-      records: Array.isArray(legacy.records)
-        ? legacy.records.map((record) => ({
-            id: record.id || uid("record"),
-            type: record.type || "expense",
-            amount: numberValue(record.amount),
-            name: record.name || "支出",
-            date: record.date || new Date().toISOString(),
-            createdAt: record.createdAt || record.date || new Date().toISOString()
-          }))
-        : []
-    });
-  }
+function hasFirebaseConfig() {
+  const config = firebaseConfig();
+  return Boolean(
+    config.apiKey &&
+    config.authDomain &&
+    config.projectId &&
+    !String(config.apiKey).includes("REPLACE_WITH") &&
+    !String(config.projectId).includes("REPLACE_WITH")
+  );
+}
 
-  return normalizeState(defaults);
+function loadDemoState() {
+  const saved = readStorage(DEMO_STORAGE_KEY) || readStorage(LEGACY_STORAGE_KEY);
+  return normalizeState(saved || demoData);
 }
 
 function readStorage(key) {
@@ -71,8 +77,29 @@ function readStorage(key) {
   }
 }
 
+function writeDemoState() {
+  localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
+}
+
+function profilePayload() {
+  return {
+    currentSavings: state.currentSavings,
+    safetyLine: state.safetyLine,
+    familySupport: state.familySupport,
+    salary: state.salary,
+    extraIncome: state.extraIncome,
+    rent: state.rent,
+    utilitiesInternet: state.utilitiesInternet,
+    netHourlyWage: state.netHourlyWage,
+    dailyWorkHours: state.dailyWorkHours,
+    weeklyWorkDays: state.weeklyWorkDays,
+    showTimeCard: state.showTimeCard,
+    updatedAt: serverTimestamp()
+  };
+}
+
 function normalizeState(raw) {
-  const next = { ...defaults, ...(raw || {}) };
+  const next = { ...demoData, ...(raw || {}) };
   return {
     ...next,
     currentSavings: numberValue(next.currentSavings),
@@ -82,9 +109,9 @@ function normalizeState(raw) {
     extraIncome: numberValue(next.extraIncome),
     rent: numberValue(next.rent),
     utilitiesInternet: numberValue(next.utilitiesInternet),
-    netHourlyWage: numberValue(next.netHourlyWage) || defaults.netHourlyWage,
-    dailyWorkHours: numberValue(next.dailyWorkHours) || defaults.dailyWorkHours,
-    weeklyWorkDays: numberValue(next.weeklyWorkDays) || defaults.weeklyWorkDays,
+    netHourlyWage: numberValue(next.netHourlyWage) || demoData.netHourlyWage,
+    dailyWorkHours: numberValue(next.dailyWorkHours) || demoData.dailyWorkHours,
+    weeklyWorkDays: numberValue(next.weeklyWorkDays) || demoData.weeklyWorkDays,
     showTimeCard: next.showTimeCard !== false,
     productPrice: numberValue(next.productPrice),
     records: Array.isArray(next.records) ? next.records.map(normalizeRecord).filter(Boolean) : []
@@ -104,72 +131,37 @@ function normalizeRecord(record) {
   };
 }
 
-async function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!supabaseClient || !currentUser) return;
-  await supabaseClient.from(CLOUD_TABLE).upsert({ user_id: currentUser.id, data: state, updated_at: new Date().toISOString() });
+async function saveProfile() {
+  if (!currentUser || !db) {
+    writeDemoState();
+    return;
+  }
+  await setDoc(doc(db, "users", currentUser.uid, "profile", "main"), profilePayload(), { merge: true });
 }
 
-async function loadCloudState() {
-  if (!supabaseClient || !currentUser) return;
-  const { data, error } = await supabaseClient.from(CLOUD_TABLE).select("data").eq("user_id", currentUser.id).maybeSingle();
-  if (error) { setAuthStatus("云端数据读取失败，请检查 Supabase 表和权限。", true); return; }
-  if (data && data.data) state = normalizeState(data.data);
-  else await saveState();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+async function loadCloudState(user) {
+  const profileRef = doc(db, "users", user.uid, "profile", "main");
+  const profileSnap = await getDoc(profileRef);
+  const recordsQuery = query(collection(db, "users", user.uid, "records"), orderBy("createdAt", "desc"), limit(50));
+  const recordsSnap = await getDocs(recordsQuery);
+  const records = recordsSnap.docs.map((recordDoc) => normalizeRecord({ id: recordDoc.id, ...recordDoc.data() })).filter(Boolean);
+
+  if (profileSnap.exists()) {
+    state = normalizeState({ ...profileSnap.data(), records });
+  } else {
+    state = normalizeState({ ...demoData, records: [] });
+    await setDoc(profileRef, profilePayload());
+  }
 }
 
-function setLocked(locked) {
-  document.body.classList.toggle("locked", locked);
-  document.body.classList.toggle("authenticated", !locked);
+async function saveRecord(record) {
+  if (!currentUser || !db) return;
+  await setDoc(doc(db, "users", currentUser.uid, "records", record.id), record);
 }
 
-function setAuthStatus(message, isError = false) {
-  const status = document.getElementById("authStatus");
-  if (!status) return;
-  status.textContent = message || "";
-  status.classList.toggle("amount-negative", Boolean(isError));
-}
-
-function friendlyAuthError(message = "") {
-  const text = String(message).toLowerCase();
-  if (text.includes("invalid login credentials")) return "邮箱或密码不正确。";
-  if (text.includes("email address") && text.includes("invalid")) return "邮箱格式或邮箱域名无效，请用你真实常用的邮箱。";
-  if (text.includes("password") && (text.includes("6") || text.includes("short"))) return "密码至少需要 6 位。";
-  if (text.includes("already registered") || text.includes("already been registered")) return "这个邮箱已经注册过了，请直接登录。";
-  if (text.includes("signup") && text.includes("disabled")) return "当前 Supabase 项目没有开启邮箱注册。";
-  if (text.includes("rate limit")) return "尝试太频繁了，请稍等几分钟再试。";
-  return message || "操作失败，请稍后再试。";
-}
-
-function authRedirectUrl() {
-  return new URL("./", window.location.href).href;
-}
-
-function updateAccountUi() {
-  const accountEmail = document.getElementById("accountEmail");
-  if (accountEmail) accountEmail.textContent = currentUser?.email || "未登录";
-}
-
-async function handleAuthChange(user) {
-  currentUser = user || null;
-  updateAccountUi();
-  if (!currentUser) { state = normalizeState(defaults); setLocked(true); render(); return; }
-  setAuthStatus("正在读取你的私人数据...");
-  await loadCloudState();
-  setLocked(false);
-  setAuthStatus("");
-  render();
-  activateTab(localStorage.getItem(ACTIVE_TAB_KEY) || "home-screen", { scroll: false });
-}
-
-async function setupAuth() {
-  setLocked(true);
-  if (!hasSupabaseConfig || !window.supabase) { setAuthStatus("登录功能已加入，但还需要配置 Supabase 地址和 anon key。", true); render(); return; }
-  supabaseClient = window.supabase.createClient(supabaseSettings.url, supabaseSettings.anonKey);
-  const { data } = await supabaseClient.auth.getSession();
-  await handleAuthChange(data.session?.user || null);
-  supabaseClient.auth.onAuthStateChange((_event, session) => handleAuthChange(session?.user || null));
+async function removeRecord(recordId) {
+  if (!currentUser || !db) return;
+  await deleteDoc(doc(db, "users", currentUser.uid, "records", recordId));
 }
 
 function uid(prefix) {
@@ -218,12 +210,8 @@ function buffer() {
 }
 
 function cashStatus() {
-  if (state.currentSavings <= state.safetyLine) {
-    return { label: "紧张", className: "status-danger" };
-  }
-  if (state.currentSavings <= state.safetyLine * 1.8) {
-    return { label: "注意", className: "status-warning" };
-  }
+  if (state.currentSavings <= state.safetyLine) return { label: "紧张", className: "status-danger" };
+  if (state.currentSavings <= state.safetyLine * 1.8) return { label: "注意", className: "status-warning" };
   return { label: "安全", className: "status-safe" };
 }
 
@@ -254,6 +242,8 @@ function renderHome() {
         <span class="status-pill ${status.className}">${status.label}</span>
       </div>
       <strong class="main-amount">${currency(state.currentSavings)}</strong>
+      ${moneyLine("安全线", state.safetyLine)}
+      ${moneyLine("可用缓冲", buffer(), "total")}
     </article>
 
     <article class="glass-card">
@@ -269,12 +259,10 @@ function renderHome() {
       ${moneyLine("家庭支持", state.familySupport)}
       ${moneyLine("工资", state.salary)}
       ${moneyLine("额外收入", state.extraIncome)}
-      ${moneyLine("收入合计", incomeTotal(), "total")}
       <div class="divider"></div>
       <div class="section-heading">支出</div>
       ${moneyLine("房租", state.rent)}
       ${moneyLine("水电网预计", state.utilitiesInternet)}
-      ${moneyLine("固定支出合计", fixedExpenseTotal(), "total")}
     </article>
 
     ${state.showTimeCard ? renderTimeCard() : ""}
@@ -284,7 +272,7 @@ function renderHome() {
   if (productInput) {
     productInput.addEventListener("input", () => {
       state.productPrice = numberValue(productInput.value);
-      saveState();
+      writeDemoState();
       renderTimeResult();
     });
     renderTimeResult();
@@ -317,7 +305,6 @@ function renderTimeResult() {
   const extra = document.getElementById("workTimeExtra");
   const note = document.getElementById("timeCardNote");
   if (!primary || !extra || !note) return;
-
   const result = workTimeText(state.productPrice);
   primary.textContent = result.primary;
   extra.textContent = result.extra;
@@ -328,45 +315,29 @@ function workTimeText(price) {
   const amount = numberValue(price);
   const hourly = numberValue(state.netHourlyWage);
   if (amount <= 0 || hourly <= 0) return { primary: "0 分钟", extra: "" };
-
   const hours = amount / hourly;
   const minutes = hours * 60;
   let primary = "";
-  if (minutes < 1) {
-    primary = "< 1 分钟";
-  } else if (minutes < 60) {
-    primary = `${Math.round(minutes)} 分钟`;
-  } else {
-    const wholeHours = Math.floor(minutes / 60);
-    const restMinutes = Math.round(minutes % 60);
-    primary = `${wholeHours}h ${restMinutes}m`;
-  }
-
+  if (minutes < 1) primary = "< 1 分钟";
+  else if (minutes < 60) primary = `${Math.round(minutes)} 分钟`;
+  else primary = `${Math.floor(minutes / 60)}h ${Math.round(minutes % 60)}m`;
   const dayHours = Math.max(1, numberValue(state.dailyWorkHours));
   const weekHours = dayHours * Math.max(1, numberValue(state.weeklyWorkDays));
   let extra = "";
-  if (hours >= weekHours) {
-    extra = `约 ${(hours / weekHours).toFixed(1)} 个工作周`;
-  } else if (hours >= dayHours) {
-    extra = `约 ${(hours / dayHours).toFixed(1)} 个工作日`;
-  }
+  if (hours >= weekHours) extra = `约 ${(hours / weekHours).toFixed(1)} 个工作周`;
+  else if (hours >= dayHours) extra = `约 ${(hours / dayHours).toFixed(1)} 个工作日`;
   return { primary, extra };
 }
 
 function renderRecords() {
   const list = document.getElementById("recordList");
   if (!list) return;
-  const recent = [...state.records]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 10);
-
+  const recent = [...state.records].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
   if (!recent.length) {
     list.innerHTML = `
       <div class="empty-state">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 4h8l2 3v13H6V7z"/>
-          <path d="M8 10h8"/>
-          <path d="M8 14h6"/>
+          <path d="M8 4h8l2 3v13H6V7z"/><path d="M8 10h8"/><path d="M8 14h6"/>
         </svg>
         <strong>暂无记录</strong>
         <p>开始记录你的第一笔收支</p>
@@ -374,7 +345,6 @@ function renderRecords() {
     `;
     return;
   }
-
   list.innerHTML = recent.map((record) => {
     const isIncome = record.type === "income";
     return `
@@ -385,13 +355,7 @@ function renderRecords() {
         </div>
         <strong class="record-amount ${isIncome ? "amount-positive" : "amount-negative"}">${currency(record.amount, { plus: isIncome })}</strong>
         <button class="delete-button" data-delete-record="${record.id}" type="button" aria-label="删除记录">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16"/>
-            <path d="M10 11v6"/>
-            <path d="M14 11v6"/>
-            <path d="M6 7l1 14h10l1-14"/>
-            <path d="M9 7V4h6v3"/>
-          </svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/></svg>
         </button>
       </div>
     `;
@@ -411,6 +375,7 @@ function setInput(id, value) {
 
 function renderSettings() {
   setInput("settingsCurrentSavings", state.currentSavings);
+  setInput("settingsSafetyLine", state.safetyLine);
   setInput("settingsFamilySupport", state.familySupport);
   setInput("settingsSalary", state.salary);
   setInput("settingsExtraIncome", state.extraIncome);
@@ -423,19 +388,66 @@ function renderSettings() {
   if (showTimeCard) showTimeCard.checked = state.showTimeCard;
 }
 
+function renderAuth() {
+  const signedOut = document.getElementById("signedOutActions");
+  const signedIn = document.getElementById("signedInPanel");
+  const email = document.getElementById("currentUserEmail");
+  const notice = document.getElementById("modeNotice");
+  if (signedOut) signedOut.hidden = Boolean(currentUser);
+  if (signedIn) signedIn.hidden = !currentUser;
+  if (email) email.textContent = currentUser?.email || "未登录";
+  if (notice) {
+    notice.textContent = currentUser
+      ? "已登录。你的数据会保存到 Firestore 当前账号下。"
+      : "当前为 Demo 模式。数据只保存在本机浏览器，登录后可同步保存你的私人数据。";
+  }
+}
+
 function render() {
+  renderAuth();
   renderHome();
   renderRecords();
   renderSettings();
 }
 
-function bindAmount(id, key) {
+function setAuthStatus(message, isError = false) {
+  const status = document.getElementById("authStatus");
+  if (!status) return;
+  status.textContent = message || "";
+  status.classList.toggle("amount-negative", Boolean(isError));
+}
+
+function friendlyAuthError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (message.includes("auth/email-already-in-use")) return "这个邮箱已经注册过，请直接登录。";
+  if (message.includes("auth/invalid-email")) return "邮箱格式不正确。";
+  if (message.includes("auth/weak-password")) return "密码至少需要 6 位。";
+  if (message.includes("auth/invalid-credential") || message.includes("auth/wrong-password")) return "邮箱或密码不正确。";
+  if (message.includes("auth/configuration-not-found")) return "Firebase 邮箱密码登录还没有开启。";
+  if (message.includes("permission-denied")) return "Firestore 权限规则未配置，请检查 README 里的 Security Rules。";
+  return error?.message || "操作失败，请稍后再试。";
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.hidden = false;
+}
+
+function closeModals() {
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => { modal.hidden = true; });
+}
+
+async function bindAmount(id, key) {
   const input = document.getElementById(id);
   if (!input) return;
-  input.addEventListener("input", () => {
+  input.addEventListener("input", async () => {
     state[key] = numberValue(input.value);
-    saveState();
     renderHome();
+    try {
+      await saveProfile();
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+    }
   });
 }
 
@@ -465,45 +477,100 @@ function showSavedToast(message = "已保存。") {
   if (!toast) return;
   toast.textContent = message;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toast.textContent = "";
-  }, 1600);
+  toastTimer = setTimeout(() => { toast.textContent = ""; }, 1600);
+}
+
+async function setupFirebase() {
+  if (!hasFirebaseConfig()) {
+    authReady = true;
+    cloudReady = false;
+    setAuthStatus("Demo 可用。配置 Firebase 后可注册登录。", false);
+    render();
+    return;
+  }
+  const app = initializeApp(firebaseConfig());
+  auth = getAuth(app);
+  db = getFirestore(app);
+  cloudReady = true;
+  onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    if (!user) {
+      state = loadDemoState();
+      authReady = true;
+      setAuthStatus("");
+      render();
+      return;
+    }
+    setAuthStatus("正在读取你的私人数据...");
+    try {
+      await loadCloudState(user);
+      authReady = true;
+      setAuthStatus("");
+      render();
+      activateTab(localStorage.getItem(ACTIVE_TAB_KEY) || "home-screen", { scroll: false });
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+      authReady = true;
+      render();
+    }
+  });
+}
+
+function setupAuthUi() {
+  document.getElementById("openSignInButton")?.addEventListener("click", () => openModal("signInModal"));
+  document.getElementById("openSignUpButton")?.addEventListener("click", () => openModal("signUpModal"));
+  document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModals));
+  document.querySelectorAll(".modal-backdrop").forEach((modal) => {
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModals();
+    });
+  });
+
+  document.getElementById("signInForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!auth) return setAuthStatus("请先配置 Firebase。", true);
+    const email = document.getElementById("signInEmail")?.value.trim();
+    const password = document.getElementById("signInPassword")?.value;
+    if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
+    setAuthStatus("正在登录...");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      closeModals();
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+    }
+  });
+
+  document.getElementById("signUpForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!auth) return setAuthStatus("请先配置 Firebase。", true);
+    const email = document.getElementById("signUpEmail")?.value.trim();
+    const password = document.getElementById("signUpPassword")?.value;
+    const confirm = document.getElementById("signUpPasswordConfirm")?.value;
+    if (!email || !password || !confirm) return setAuthStatus("请完整填写注册信息。", true);
+    if (password.length < 6) return setAuthStatus("密码至少需要 6 位。", true);
+    if (password !== confirm) return setAuthStatus("两次密码不一致。", true);
+    setAuthStatus("正在注册...");
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      closeModals();
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+    }
+  });
+
+  document.getElementById("signOutButton")?.addEventListener("click", async () => {
+    if (!auth) return;
+    await signOut(auth);
+    currentUser = null;
+    state = loadDemoState();
+    render();
+  });
 }
 
 function setup() {
-  const authForm = document.getElementById("authForm");
-  const signUpButton = document.getElementById("signUpButton");
-  const signOutButton = document.getElementById("signOutButton");
-  if (authForm) authForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!supabaseClient) return;
-    const email = document.getElementById("authEmail")?.value.trim();
-    const password = document.getElementById("authPassword")?.value;
-    if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
-    if (password.length < 6) return setAuthStatus("密码至少需要 6 位。", true);
-    setAuthStatus("正在登录...");
-    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    if (error) setAuthStatus(friendlyAuthError(error.message), true);
-  });
-  if (signUpButton) signUpButton.addEventListener("click", async () => {
-    if (!supabaseClient) return;
-    const email = document.getElementById("authEmail")?.value.trim();
-    const password = document.getElementById("authPassword")?.value;
-    if (!email || !password) return setAuthStatus("请输入邮箱和密码。", true);
-    if (password.length < 6) return setAuthStatus("密码至少需要 6 位。", true);
-    setAuthStatus("正在注册...");
-    const { data, error } = await supabaseClient.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: authRedirectUrl() }
-    });
-    if (error) setAuthStatus(friendlyAuthError(error.message), true);
-    else if (data?.session) setAuthStatus("注册成功，已经登录。");
-    else setAuthStatus("注册成功。请去邮箱点击确认链接，再回来登录。");
-  });
-  if (signOutButton) signOutButton.addEventListener("click", async () => { if (supabaseClient) await supabaseClient.auth.signOut(); });
-
   bindAmount("settingsCurrentSavings", "currentSavings");
+  bindAmount("settingsSafetyLine", "safetyLine");
   bindAmount("settingsFamilySupport", "familySupport");
   bindAmount("settingsSalary", "salary");
   bindAmount("settingsExtraIncome", "extraIncome");
@@ -515,10 +582,10 @@ function setup() {
 
   const showTimeCard = document.getElementById("showTimeCard");
   if (showTimeCard) {
-    showTimeCard.addEventListener("change", () => {
+    showTimeCard.addEventListener("change", async () => {
       state.showTimeCard = showTimeCard.checked;
-      saveState();
       renderHome();
+      try { await saveProfile(); } catch (error) { setAuthStatus(friendlyAuthError(error), true); }
     });
   }
 
@@ -526,65 +593,74 @@ function setup() {
     button.addEventListener("click", () => setRecordType(button.dataset.recordType));
   });
 
-  const form = document.getElementById("recordForm");
-  if (form) {
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const amountInput = document.getElementById("recordAmount");
-      const nameInput = document.getElementById("recordName");
-      const amount = numberValue(amountInput?.value);
-      if (amount <= 0) return;
+  document.getElementById("recordForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const amountInput = document.getElementById("recordAmount");
+    const nameInput = document.getElementById("recordName");
+    const amount = numberValue(amountInput?.value);
+    if (amount <= 0) return;
+    const now = new Date().toISOString();
+    const record = {
+      id: uid("record"),
+      type: recordType,
+      amount,
+      name: nameInput?.value.trim() || (recordType === "income" ? "收入" : "支出"),
+      date: now,
+      createdAt: now
+    };
+    state.currentSavings += recordType === "income" ? amount : -amount;
+    state.records.unshift(record);
+    amountInput.value = "";
+    if (nameInput) nameInput.value = "";
+    try {
+      if (currentUser) {
+        await saveRecord(record);
+        await saveProfile();
+      } else {
+        writeDemoState();
+      }
+      showSavedToast(currentUser ? "已保存到云端。" : "Demo 数据已保存在本机。");
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+    }
+    render();
+  });
 
-      const now = new Date().toISOString();
-      const record = {
-        id: uid("record"),
-        type: recordType,
-        amount,
-        name: nameInput?.value.trim() || (recordType === "income" ? "收入" : "支出"),
-        date: now,
-        createdAt: now
-      };
-
-      state.currentSavings += recordType === "income" ? amount : -amount;
-      state.records.unshift(record);
-      amountInput.value = "";
-      if (nameInput) nameInput.value = "";
-      saveState();
-      showSavedToast();
-      render();
-    });
-  }
-
-  const list = document.getElementById("recordList");
-  if (list) {
-    list.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-delete-record]");
-      if (!button) return;
-      const id = button.dataset.deleteRecord;
-      const record = state.records.find((item) => item.id === id);
-      if (!record) return;
-      if (!confirm("删除这条记录？\n删除后会自动恢复当前现金。")) return;
-
-      state.currentSavings += record.type === "income" ? -record.amount : record.amount;
-      state.records = state.records.filter((item) => item.id !== id);
-      saveState();
-      render();
-    });
-  }
+  document.getElementById("recordList")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-record]");
+    if (!button) return;
+    const id = button.dataset.deleteRecord;
+    const record = state.records.find((item) => item.id === id);
+    if (!record) return;
+    if (!confirm("删除这条记录？\n删除后会自动恢复当前现金。")) return;
+    state.currentSavings += record.type === "income" ? -record.amount : record.amount;
+    state.records = state.records.filter((item) => item.id !== id);
+    try {
+      if (currentUser) {
+        await removeRecord(id);
+        await saveProfile();
+      } else {
+        writeDemoState();
+      }
+    } catch (error) {
+      setAuthStatus(friendlyAuthError(error), true);
+    }
+    render();
+  });
 
   document.querySelectorAll(".tab").forEach((button) => {
-    button.addEventListener("click", () => {
-      activateTab(button.dataset.tab, { smooth: true });
-    });
+    button.addEventListener("click", () => activateTab(button.dataset.tab, { smooth: true }));
   });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   }
 
+  setupAuthUi();
   setRecordType("expense");
   render();
+  setupFirebase();
+  activateTab(localStorage.getItem(ACTIVE_TAB_KEY) || "home-screen", { scroll: false });
 }
 
 setup();
-setupAuth();
