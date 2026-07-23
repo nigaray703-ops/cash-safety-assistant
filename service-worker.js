@@ -1,4 +1,4 @@
-const CACHE_NAME = "cash-safety-web-v14";
+const CACHE_NAME = "cash-safety-web-v15";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,7 +7,8 @@ const ASSETS = [
   "./firebase-config.js",
   "./manifest.webmanifest",
   "./icon.svg",
-  "./demo-preview.svg"
+  "./demo-preview.svg",
+  "./demo-preview.png"
 ];
 
 self.addEventListener("install", (event) => {
